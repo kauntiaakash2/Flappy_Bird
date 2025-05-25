@@ -1,141 +1,189 @@
-// FlappyBirdGame.java
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.*;
-
-public class FlappyBirdGame {
-    private JFrame frame;
-    private GamePanel gamePanel;
-
-    public FlappyBirdGame() {
-        frame = new JFrame("Flappy Bird");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(400, 600);
-
-        gamePanel = new GamePanel();
-        frame.add(gamePanel);
-
-        frame.setVisible(true);
-    }
-
-    public static void main(String[] args) {
-        new FlappyBirdGame();
-    }
-}
-
-// Bird.java
-import java.awt.*;
-
-public class Bird {
-    private int x, y;
-    private int width, height;
-    private int velocity;
-
-    public Bird(int x, int y, int width, int height) {
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.height = height;
-        this.velocity = 0;
-    }
-
-    public void flap() {
-        velocity = -10;
-    }
-
-    public void update() {
-        velocity += 1;
-        y += velocity;
-    }
-
-    public Rectangle getBounds() {
-        return new Rectangle(x, y, width, height);
-    }
-}
-
-// Pipe.java
-import java.awt.*;
-
-public class Pipe {
-    private int x, y;
-    private int width, height;
-
-    public Pipe(int x, int y, int width, int height) {
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.height = height;
-    }
-
-    public Rectangle getBounds() {
-        return new Rectangle(x, y, width, height);
-    }
-}
-
-// GamePanel.java
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.Random;
 
-public class GamePanel extends JPanel implements ActionListener {
-    private Bird bird;
-    private List<Pipe> pipes;
+public class FlappyBird extends JPanel implements ActionListener, KeyListener {
+    // Game constants
+    private static final int WIDTH = 400;
+    private static final int HEIGHT = 600;
+    private static final int GROUND = 100;
+    private static final int PIPE_WIDTH = 60;
+    private static final int PIPE_GAP = 150;
+    private static final int BIRD_SIZE = 30;
+    private static final int GRAVITY = 1;
+    private static final int JUMP_STRENGTH = -12;
+    private static final int PIPE_SPEED = 4;
+
+    // Game state variables
+    private int birdY = HEIGHT / 2;
+    private int birdVelocity = 0;
+    private ArrayList<Rectangle> pipes;
+    private int score = 0;
+    private boolean gameOver = false;
+    private boolean gameStarted = false;
     private Timer timer;
 
-    public GamePanel() {
-        bird = new Bird(100, 200, 30, 30);
+    public FlappyBird() {
+        setPreferredSize(new Dimension(WIDTH, HEIGHT));
+        setBackground(new Color(135, 206, 250));
+        setFocusable(true);
+        addKeyListener(this);
+
         pipes = new ArrayList<>();
-        timer = new Timer(16, this);
+        timer = new Timer(20, this);
         timer.start();
 
-        addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                bird.flap();
-            }
-        });
+        addPipe(true);
+        addPipe(true);
+        addPipe(true);
+        addPipe(true);
     }
 
-    @Override
-    public void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        g.setColor(Color.BLACK);
-        g.fillRect(0, 0, getWidth(), getHeight());
-
-        g.setColor(Color.YELLOW);
-        g.fillRect(bird.getX(), bird.getY(), bird.getWidth(), bird.getHeight());
-
-        for (Pipe pipe : pipes) {
-            g.setColor(Color.GREEN);
-            g.fillRect(pipe.getX(), pipe.getY(), pipe.getWidth(), pipe.getHeight());
+    // Add a new pipe to the screen
+    private void addPipe(boolean start) {
+        int space = PIPE_GAP;
+        int height = 50 + new Random().nextInt(HEIGHT - GROUND - space - 50);
+        if (start) {
+            pipes.add(new Rectangle(WIDTH + pipes.size() * 200, HEIGHT - height - GROUND, PIPE_WIDTH, height));
+            pipes.add(new Rectangle(WIDTH + pipes.size() * 200, 0, PIPE_WIDTH, HEIGHT - height - space - GROUND));
+        } else {
+            pipes.add(new Rectangle(pipes.get(pipes.size() - 1).x + 200, HEIGHT - height - GROUND, PIPE_WIDTH, height));
+            pipes.add(new Rectangle(pipes.get(pipes.size() - 1).x, 0, PIPE_WIDTH, HEIGHT - height - space - GROUND));
         }
     }
 
+    // Move pipes and bird
     @Override
     public void actionPerformed(ActionEvent e) {
-        bird.update();
+        if (gameStarted) {
+            for (int i = 0; i < pipes.size(); i++) {
+                Rectangle pipe = pipes.get(i);
+                pipe.x -= PIPE_SPEED;
+            }
 
-        // Add new pipes
-        if (Math.random() < 0.1) {
-            pipes.add(new Pipe(getWidth(), (int) (Math.random() * getHeight()), 30, 30));
-        }
+            if (!gameOver) {
+                birdVelocity += GRAVITY;
+                birdY += birdVelocity;
+            }
 
-        // Update pipes
-        for (Pipe pipe : pipes) {
-            pipe.setX(pipe.getX() - 2);
-        }
+            // Remove off-screen pipes
+            for (int i = 0; i < pipes.size(); i++) {
+                Rectangle pipe = pipes.get(i);
+                if (pipe.x + pipe.width < 0) {
+                    pipes.remove(pipe);
+                    if (pipe.y == 0) addPipe(false);
+                }
+            }
 
-        // Check collisions
-        for (Pipe pipe : pipes) {
-            if (bird.getBounds().intersects(pipe.getBounds())) {
-                // Game over
-                System.out.println("Game Over!");
-                timer.stop();
+            // Collision detection
+            for (Rectangle pipe : pipes) {
+                if (pipe.intersects(new Rectangle(WIDTH / 2 - BIRD_SIZE / 2, birdY, BIRD_SIZE, BIRD_SIZE))) {
+                    gameOver = true;
+                    break;
+                }
+            }
+
+            // Ground and ceiling collision
+            if (birdY > HEIGHT - GROUND - BIRD_SIZE || birdY < 0) {
+                gameOver = true;
+            }
+
+            // Score
+            for (Rectangle pipe : pipes) {
+                if (pipe.y > 0 && pipe.x + PIPE_WIDTH / 2 == WIDTH / 2 - BIRD_SIZE / 2) {
+                    score++;
+                }
             }
         }
 
         repaint();
+    }
+
+    // Draw everything
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+
+        // Draw ground
+        g.setColor(new Color(222, 184, 135));
+        g.fillRect(0, HEIGHT - GROUND, WIDTH, GROUND);
+
+        // Draw pipes
+        g.setColor(new Color(0, 200, 0));
+        for (Rectangle pipe : pipes) {
+            g.fillRect(pipe.x, pipe.y, pipe.width, pipe.height);
+        }
+
+        // Draw bird
+        g.setColor(Color.YELLOW);
+        g.fillOval(WIDTH / 2 - BIRD_SIZE / 2, birdY, BIRD_SIZE, BIRD_SIZE);
+
+        // Draw score
+        g.setColor(Color.WHITE);
+        g.setFont(new Font("Arial", Font.BOLD, 36));
+        if (!gameStarted) {
+            String msg = "Press SPACE to Start";
+            g.drawString(msg, WIDTH / 2 - g.getFontMetrics().stringWidth(msg) / 2, HEIGHT / 2 - 50);
+        }
+
+        if (gameOver) {
+            String msg = "Game Over!";
+            g.drawString(msg, WIDTH / 2 - g.getFontMetrics().stringWidth(msg) / 2, HEIGHT / 2 - 50);
+            String scoreMsg = "Score: " + score;
+            g.drawString(scoreMsg, WIDTH / 2 - g.getFontMetrics().stringWidth(scoreMsg) / 2, HEIGHT / 2);
+            String restartMsg = "Press R to Restart";
+            g.setFont(new Font("Arial", Font.PLAIN, 24));
+            g.drawString(restartMsg, WIDTH / 2 - g.getFontMetrics().stringWidth(restartMsg) / 2, HEIGHT / 2 + 40);
+        } else if (gameStarted) {
+            g.drawString(String.valueOf(score), WIDTH / 2 - 10, 100);
+        }
+    }
+
+    // Key events
+    @Override
+    public void keyPressed(KeyEvent e) {
+        int key = e.getKeyCode();
+
+        if (key == KeyEvent.VK_SPACE) {
+            if (!gameStarted) {
+                gameStarted = true;
+            }
+            if (!gameOver) {
+                birdVelocity = JUMP_STRENGTH;
+            }
+        }
+
+        if (key == KeyEvent.VK_R && gameOver) {
+            // Reset game
+            pipes.clear();
+            birdY = HEIGHT / 2;
+            birdVelocity = 0;
+            score = 0;
+            gameOver = false;
+            gameStarted = false;
+            addPipe(true);
+            addPipe(true);
+            addPipe(true);
+            addPipe(true);
+        }
+    }
+
+    @Override
+    public void keyReleased(KeyEvent e) {}
+    @Override
+    public void keyTyped(KeyEvent e) {}
+
+    // Main method to run the game
+    public static void main(String[] args) {
+        JFrame frame = new JFrame("Flappy Bird");
+        FlappyBird game = new FlappyBird();
+        frame.add(game);
+        frame.pack();
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setResizable(false);
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
     }
 }
